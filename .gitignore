@@ -1,0 +1,12 @@
+# すべてのファイルを無視
+*
+
+# 例外として *.mq5 ファイルのみをGitに追加
+!*.mq5
+!*.py
+!.gitignore
+!.gitattributes
+
+# Git管理に不要なシステムファイルを無視
+.DS_Store
+Thumbs.db

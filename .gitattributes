@@ -1,0 +1,3 @@
+# UTF-16LEでテキストとして扱う
+*.mq5 text working-tree-encoding=UTF-16LE
+*.py text eol=lf
