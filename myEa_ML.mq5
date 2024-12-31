@@ -177,7 +177,7 @@ int OnInit() {
         return(INIT_FAILED);
     }
 
-    EventSetTimer(60*60); 
+    EventSetTimer(60*5); 
     return(INIT_SUCCEEDED);
 }
 
@@ -198,8 +198,8 @@ void OnTimer() {
       price = ask_price;
       //tp = (real_prediction + ask_price)/2.0;
       tp = ask_price + 600*_Point;
-      sl = bid_price - 600*_Point;
-      lot = CalculateLot(1);
+      sl = bid_price - 300*_Point;
+      lot = CalculateLot(0.5);
       if(lastTrend == -1)CloseAllPositions();
       lastTrend = 1;
       PlaceOrder(ORDER_TYPE_BUY,lot,price,sl,tp);
@@ -208,8 +208,8 @@ void OnTimer() {
       price = bid_price;
       //tp = (real_prediction+bid_price)/2.0;
       tp = bid_price - 600*_Point;
-      sl = ask_price + 600*_Point;
-      lot = CalculateLot(1);
+      sl = ask_price + 300*_Point;
+      lot = CalculateLot(0.5);
       if(lastTrend == 1)CloseAllPositions();
       lastTrend = -1;
       PlaceOrder(ORDER_TYPE_SELL,lot,price,sl,tp);
