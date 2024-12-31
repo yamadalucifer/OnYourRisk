@@ -110,7 +110,6 @@ bool PrepareFeatures(float &input_data[][8]) {
     input_data[0][7] = (float)atr_values[0];
     return true;
 }
-
 double PerformPrediction() {
     float input_data[1][8];
     if (!PrepareFeatures(input_data)) {
@@ -118,25 +117,49 @@ double PerformPrediction() {
         return 0.5;
     }
 
-    long input_shape[] = {1,8};
+    // 入力形状の設定
+    long input_shape[] = {1, 8}; // バッチサイズ1、特徴量8
     if (!OnnxSetInputShape(onnx_handle, 0, input_shape)) {
         Print("OnnxSetInputShape failed, error ", GetLastError());
         return 0.5;
     }
 
-    long output_shape[] = {1};
-    if (!OnnxSetOutputShape(onnx_handle, 0, output_shape)) {
-        Print("OnnxSetOutputShape failed, error ", GetLastError());
+    // 出力1（label）の形状を設定
+    long output_shape1[] = {1}; // バッチサイズ1、1つのラベル
+    if (!OnnxSetOutputShape(onnx_handle, 0, output_shape1)) {
+        Print("OnnxSetOutputShape for label failed, error ", GetLastError());
         return 0.5;
     }
 
-    long output_data[1];
-    if (!OnnxRun(onnx_handle, 0, input_data, output_data)) {
+    // 出力2（probabilities）の形状を設定
+    long output_shape2[] = {1, 2}; // バッチサイズ1、クラス数2
+    if (!OnnxSetOutputShape(onnx_handle, 1, output_shape2)) {
+        Print("OnnxSetOutputShape for probabilities failed, error ", GetLastError());
+        return 0.5;
+    }
+
+    // 入力と出力のデータ配列
+    vectorf input_v(8);        // 入力データ（float型）
+    vector output_label(1);    // 出力データ（label、double型）
+    matrix probabilities(1, 2); // 出力データ（probabilities、double型）
+
+    // 入力データを設定
+    for (int i = 0; i < 8; i++) {
+        input_v[i] = input_data[0][i];
+    }
+
+    // モデルの実行
+    if (!OnnxRun(onnx_handle, ONNX_DEBUG_LOGS, input_data, output_label, probabilities)) {
         Print("OnnxRun failed, error ", GetLastError());
         return 0.5;
     }
 
-    return (double)output_data[0];
+    // 結果の表示
+    Print("Predicted label: ", output_label[0]);
+    Print("Probabilities: [", probabilities[0][0], ", ", probabilities[0][1], "]");
+
+    // ラベルを返却
+    return (double)output_label[0];
 }
 
 
