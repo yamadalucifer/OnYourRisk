@@ -14,6 +14,7 @@ int macd_handle = INVALID_HANDLE;
 int atr_handle = INVALID_HANDLE;
 int stoch_k_handle = INVALID_HANDLE;
 int stoch_d_handle = INVALID_HANDLE;
+int adx_handle = INVALID_HANDLE;
 
 
 // ハンドル初期化関数
@@ -36,8 +37,13 @@ bool InitializeHandles() {
     if (atr_handle == INVALID_HANDLE)
         atr_handle = iATR(NULL, 0, 14);
 
+      if (adx_handle == INVALID_HANDLE) {
+          adx_handle = iADX(NULL, 0, 14);  // シンボル: NULL, 時間足: 0, 期間: 14
+      }
+
+
     if (ma10_handle == INVALID_HANDLE || ma50_handle == INVALID_HANDLE || bb_upper_handle == INVALID_HANDLE || 
-        bb_lower_handle == INVALID_HANDLE || rsi_handle == INVALID_HANDLE || atr_handle == INVALID_HANDLE) {
+        bb_lower_handle == INVALID_HANDLE || rsi_handle == INVALID_HANDLE || atr_handle == INVALID_HANDLE || adx_handle == INVALID_HANDLE) {
         Print("Failed to initialize indicator handles. Error: ", GetLastError());
         return false;
     }
@@ -83,10 +89,14 @@ void ReleaseHandles() {
         IndicatorRelease(stoch_d_handle);
         stoch_d_handle = INVALID_HANDLE;
     }
+    if (adx_handle != INVALID_HANDLE){
+        IndicatorRelease(adx_handle);
+        adx_handle = INVALID_HANDLE;
+    }
 }
-bool PrepareFeatures(float &input_data[][8]) {
+bool PrepareFeatures(float &input_data[][9]) {
     // 動的配列を用意してインジケータの値を取得
-    double ma10_values[], ma50_values[], bb_upper_values[], bb_lower_values[], rsi_values[], atr_values[];
+    double ma10_values[], ma50_values[], bb_upper_values[], bb_lower_values[], rsi_values[], atr_values[], adx_values[];
 
     double close = iClose(NULL, 0, 0);
     if (CopyBuffer(ma10_handle, 0, 0, 1, ma10_values) <= 0 ||
@@ -94,7 +104,8 @@ bool PrepareFeatures(float &input_data[][8]) {
         CopyBuffer(bb_upper_handle, 1, 0, 1, bb_upper_values) <= 0 ||
         CopyBuffer(bb_lower_handle, 2, 0, 1, bb_lower_values) <= 0 ||
         CopyBuffer(rsi_handle, 0, 0, 1, rsi_values) <= 0 ||
-        CopyBuffer(atr_handle, 0, 0, 1, atr_values) <= 0) {
+        CopyBuffer(atr_handle, 0, 0, 1, atr_values) <= 0 ||
+        CopyBuffer(adx_handle, 0, 0, 1, adx_values) <= 0) {
         Print("Error retrieving indicator data. Error: ", GetLastError());
         return false;
     }
@@ -104,21 +115,24 @@ bool PrepareFeatures(float &input_data[][8]) {
     input_data[0][1] = (float)ma10_values[0];
     input_data[0][2] = (float)ma50_values[0];
     input_data[0][3] = (float)rsi_values[0];
-    input_data[0][4] = (float)((close - ma10_values[0]) / ma10_values[0]);
-    input_data[0][5] = (float)bb_upper_values[0];
-    input_data[0][6] = (float)bb_lower_values[0];
-    input_data[0][7] = (float)atr_values[0];
+    //double prev_close = iClose(NULL, 0, 288);  // 1期間前の終値
+    //input_data[0][4] = (float)((close - prev_close) / prev_close);
+    input_data[0][4] = (float)bb_upper_values[0];
+    input_data[0][5] = (float)bb_lower_values[0];
+    input_data[0][6] = (float)atr_values[0];
+    input_data[0][7] = (float)(bb_upper_values[0] - bb_lower_values[0]);
+    input_data[0][8] = (float)adx_values[0];
     return true;
 }
 double PerformPrediction() {
-    float input_data[1][8];
+    float input_data[1][9];
     if (!PrepareFeatures(input_data)) {
         Print("特徴量の準備に失敗しました。");
         return 0.5;
     }
 
     // 入力形状の設定
-    long input_shape[] = {1, 8}; // バッチサイズ1、特徴量8
+    long input_shape[] = {1, 9}; // バッチサイズ1、特徴量8
     if (!OnnxSetInputShape(onnx_handle, 0, input_shape)) {
         Print("OnnxSetInputShape failed, error ", GetLastError());
         return 0.5;
@@ -132,7 +146,7 @@ double PerformPrediction() {
     }
 
     // 出力2（probabilities）の形状を設定
-    long output_shape2[] = {1, 2}; // バッチサイズ1、クラス数2
+    long output_shape2[] = {1, 3}; // バッチサイズ1、クラス数2
     if (!OnnxSetOutputShape(onnx_handle, 1, output_shape2)) {
         Print("OnnxSetOutputShape for probabilities failed, error ", GetLastError());
         return 0.5;
@@ -141,15 +155,15 @@ double PerformPrediction() {
     // 入力と出力のデータ配列
     vectorf input_v(8);        // 入力データ（float型）
     vector output_label(1);    // 出力データ（label、double型）
-    matrix probabilities(1, 2); // 出力データ（probabilities、double型）
+    matrix probabilities(1, 3); // 出力データ（probabilities、double型）
 
     // 入力データを設定
-    for (int i = 0; i < 8; i++) {
+    for (int i = 0; i < 9; i++) {
         input_v[i] = input_data[0][i];
     }
 
     // モデルの実行
-    if (!OnnxRun(onnx_handle, ONNX_DEBUG_LOGS, input_data, output_label, probabilities)) {
+    if (!OnnxRun(onnx_handle, ONNX_DEBUG_LOGS, input_v, output_label, probabilities)) {
         Print("OnnxRun failed, error ", GetLastError());
         return 0.5;
     }
@@ -193,13 +207,13 @@ void OnTimer() {
     double tp = 0;
     double price = 0;
     double lot = 0;
-    if(prediction >=  0.8){
+    if(prediction >=  1.8){
       //buy
       price = ask_price;
       //tp = (real_prediction + ask_price)/2.0;
       tp = ask_price + 600*_Point;
-      sl = bid_price - 300*_Point;
-      lot = CalculateLot(0.5);
+      sl = bid_price - 600*_Point;
+      lot = CalculateLot(1);
       if(lastTrend == -1)CloseAllPositions();
       lastTrend = 1;
       PlaceOrder(ORDER_TYPE_BUY,lot,price,sl,tp);
@@ -208,8 +222,8 @@ void OnTimer() {
       price = bid_price;
       //tp = (real_prediction+bid_price)/2.0;
       tp = bid_price - 600*_Point;
-      sl = ask_price + 300*_Point;
-      lot = CalculateLot(0.5);
+      sl = ask_price + 600*_Point;
+      lot = CalculateLot(1);
       if(lastTrend == 1)CloseAllPositions();
       lastTrend = -1;
       PlaceOrder(ORDER_TYPE_SELL,lot,price,sl,tp);
