@@ -8,7 +8,9 @@ model.load_model('xgboost_model_fixed.json')
 
 # 入力データ型を定義
 #features = ['Close', 'SMA_10', 'SMA_50', 'RSI', 'Price_Change', 'BB_upper', 'BB_lower', 'ATR']
-features = ['Close', 'SMA_10', 'SMA_50', 'RSI', 'BB_upper', 'BB_lower', 'ATR','BB_Width','ADX']
+#features = ['Close', 'SMA_10', 'SMA_50', 'RSI', 'BB_upper', 'BB_lower', 'ATR','BB_Width','ADX']
+#features = ['Close', 'SMA_10', 'SMA_50', 'RSI', 'BB_upper', 'BB_lower', 'ATR','BB_Width','ADX','High_Low_Spread','Momentum_10','Momentum_50']
+features = ['Close', 'SMA_10', 'SMA_50', 'RSI', 'BB_upper', 'BB_lower', 'ATR','BB_Width','ADX','High_Low_Spread','Momentum_10','Momentum_50','Momentum_100','Momentum_200','Momentum_300']
 input_dim = len(features)
 initial_type = [('float_input', FloatTensorType([None, input_dim]))]
 

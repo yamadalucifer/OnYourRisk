@@ -94,7 +94,7 @@ void ReleaseHandles() {
         adx_handle = INVALID_HANDLE;
     }
 }
-bool PrepareFeatures(float &input_data[][9]) {
+bool PrepareFeatures(float &input_data[][15]) {
     // 動的配列を用意してインジケータの値を取得
     double ma10_values[], ma50_values[], bb_upper_values[], bb_lower_values[], rsi_values[], atr_values[], adx_values[];
 
@@ -122,17 +122,25 @@ bool PrepareFeatures(float &input_data[][9]) {
     input_data[0][6] = (float)atr_values[0];
     input_data[0][7] = (float)(bb_upper_values[0] - bb_lower_values[0]);
     input_data[0][8] = (float)adx_values[0];
+    double high = iHigh(NULL,0,0);
+    double low = iLow(NULL,0,0);
+    input_data[0][9] = (float)(high-low);
+    input_data[0][10] = (float)(close - iClose(NULL,0,10));
+    input_data[0][11] = (float)(close - iClose(NULL,0,50));
+    input_data[0][12] = (float)(close - iClose(NULL,0,100));
+    input_data[0][13] = (float)(close - iClose(NULL,0,200));
+    input_data[0][14] = (float)(close - iClose(NULL,0,300));
     return true;
 }
 double PerformPrediction() {
-    float input_data[1][9];
-    if (!PrepareFeatures(input_data)) {
-        Print("特徴量の準備に失敗しました。");
-        return 0.5;
-    }
+    float input_data[1][15];
+    //if (!PrepareFeatures(input_data)) {
+    //    Print("特徴量の準備に失敗しました。");
+    //    return 0.5;
+    //}
 
     // 入力形状の設定
-    long input_shape[] = {1, 9}; // バッチサイズ1、特徴量8
+    long input_shape[] = {1, 15}; // バッチサイズ1、特徴量8
     if (!OnnxSetInputShape(onnx_handle, 0, input_shape)) {
         Print("OnnxSetInputShape failed, error ", GetLastError());
         return 0.5;
@@ -153,12 +161,12 @@ double PerformPrediction() {
     }
 
     // 入力と出力のデータ配列
-    vectorf input_v(8);        // 入力データ（float型）
+    vectorf input_v(15);        // 入力データ（float型）
     vector output_label(1);    // 出力データ（label、double型）
     matrix probabilities(1, 3); // 出力データ（probabilities、double型）
 
     // 入力データを設定
-    for (int i = 0; i < 9; i++) {
+    for (int i = 0; i < 15; i++) {
         input_v[i] = input_data[0][i];
     }
 
@@ -171,32 +179,38 @@ double PerformPrediction() {
     // 結果の表示
     Print("Predicted label: ", output_label[0]);
     Print("Probabilities: [", probabilities[0][0], ", ", probabilities[0][1], "]");
-
-    // ラベルを返却
-    return (double)output_label[0];
+    if(probabilities[0][(int)output_label[0]] > 0.6){
+       // ラベルを返却
+       return (double)output_label[0];
+    }else{
+      return 1;
+    }
 }
 
 
 
 // EAの初期化
 int OnInit() {
+   Print("start Init");
     if (!InitializeHandles()) {
         Print("Failed to initialize indicator handles.");
         return(INIT_FAILED);
     }
-
+    Print("Before OnnxCreate");
     onnx_handle = OnnxCreate("xgboost_model.onnx", 0);
+    Print("After OnnxCreate");
     if (onnx_handle == INVALID_HANDLE) {
         Print("Failed to load ONNX model. Error: ", GetLastError());
         return(INIT_FAILED);
     }
-
+    Print("Init Succeeded");
     EventSetTimer(60*5); 
     return(INIT_SUCCEEDED);
 }
 
 // タイマーイベント（5分ごとに呼び出される）
 void OnTimer() {
+Print("OnTimer");
     double prediction = PerformPrediction();
     double real_prediction = prediction;  // ターゲット値のインデックスを指定
     // Ask価格を取得
@@ -232,7 +246,7 @@ void OnTimer() {
 
     }else{
     }
-    PrintFormat("■Prediction: %.2f, Ask: %.5f, Bid: %.5f", prediction, ask_price, bid_price);
+    //PrintFormat("■Prediction: %.2f, Ask: %.5f, Bid: %.5f", prediction, ask_price, bid_price);
     /*
     Print("Prediction result (real price): ", real_prediction);
     double ask_price = 0.0;
@@ -250,6 +264,7 @@ void OnTimer() {
     }
     ]
     */
+    Print("End OnTimer");
 }
 
 
@@ -284,11 +299,11 @@ void PlaceOrder(ENUM_ORDER_TYPE type, double lot, double price, double sl, doubl
    {
       if(trade.PositionOpen(_Symbol, ORDER_TYPE_BUY, lot, price, sl, tp))
       {
-         Print("買い注文が成功しました。");
+         //Print("買い注文が成功しました。");
       }
       else
       {
-         PrintFormat("買い注文に失敗しました。エラー: %d", GetLastError());
+         //PrintFormat("買い注文に失敗しました。エラー: %d", GetLastError());
       }
    }
    // 売り注文
@@ -296,11 +311,11 @@ void PlaceOrder(ENUM_ORDER_TYPE type, double lot, double price, double sl, doubl
    {
       if(trade.PositionOpen(_Symbol, ORDER_TYPE_SELL, lot, price, sl, tp))
       {
-         Print("売り注文が成功しました。");
+         //Print("売り注文が成功しました。");
       }
       else
       {
-         PrintFormat("売り注文に失敗しました。エラー: %d", GetLastError());
+         //PrintFormat("売り注文に失敗しました。エラー: %d", GetLastError());
       }
    }
    else

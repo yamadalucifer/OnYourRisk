@@ -16,7 +16,7 @@ print("Output name:", output_name)
 print("Output shape:", session.get_outputs()[0].shape)
 
 # ダミーデータで推論
-input_data = np.random.rand(1, 8).astype(np.float32)  # 特徴量数を8に設定
+input_data = np.random.rand(1, 9).astype(np.float32)  # 特徴量数を8に設定
 outputs = session.run([output_name], {input_name: input_data})
 print("Outputs:", outputs)
 
