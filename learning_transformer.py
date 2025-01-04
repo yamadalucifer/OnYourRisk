@@ -16,7 +16,7 @@ random.seed(SEED)
 np.random.seed(SEED)
 
 # TensorFlowのログレベル設定
-tf.debugging.set_log_device_placement(True)
+tf.debugging.set_log_device_placement(False)
 
 # MirroredStrategyを使用して両方のGPUを活用
 strategy = tf.distribute.MirroredStrategy()
@@ -109,24 +109,27 @@ with strategy.scope():
             return Lambda(lambda x: tf.nn.dropout(x, rate))(x)
         return x
 
+    # Transformerモデル構築
     def build_transformer(input_shape, num_classes):
         inputs = Input(shape=input_shape)
         attention_output = MultiHeadAttention(num_heads=8, key_dim=32)(inputs, inputs)  # Head数と次元を減らす
         attention_output = LayerNormalization()(attention_output + inputs)
         dense_output = Dense(256, activation='relu')(attention_output)  # ユニット数を減らす
-        dense_output = custom_dropout(dense_output, rate=0.5)  # Dropout率を設定
+        dense_output = Lambda(lambda x: tf.nn.dropout(x, rate=0.5))(dense_output)  # Dropout率を設定
         flat_output = Flatten()(dense_output)
         outputs = Dense(num_classes, activation='softmax')(flat_output)
+        outputs = Lambda(lambda x: tf.clip_by_value(x, 1e-7, 1 - 1e-7))(outputs)  # 出力を制限
         return Model(inputs=inputs, outputs=outputs)
 
+    # モデルのコンパイル
     model = build_transformer((lookback, X.shape[1]), len(np.unique(y)))
     model.compile(
-        optimizer=Adam(learning_rate=0.00001),  # 学習率をさらに小さく
+        optimizer=Adam(learning_rate=1e-5),  # 学習率を調整
         loss='sparse_categorical_crossentropy',
         metrics=['accuracy']
     )
 
-    # tf.data.Datasetの作成（修正版）
+    # tf.data.Datasetの作成
     train_dataset = tf.data.Dataset.from_generator(
         lambda: ((X_train[i], y_train[i]) for i in range(len(X_train))),
         output_signature=(
@@ -143,12 +146,18 @@ with strategy.scope():
         )
     ).batch(adjusted_batch_size).prefetch(tf.data.experimental.AUTOTUNE)
 
+    # 損失の監視コールバック
+    class LossTrackerCallback(tf.keras.callbacks.Callback):
+        def on_epoch_end(self, epoch, logs=None):
+            print(f"Epoch {epoch + 1}: loss = {logs['loss']}, val_loss = {logs['val_loss']}, accuracy = {logs['accuracy']}, val_accuracy = {logs['val_accuracy']}")
+
     # モデルの学習
     history = model.fit(
         train_dataset,
         validation_data=test_dataset,
         epochs=50,
-        verbose=1
+        verbose=1,
+        callbacks=[LossTrackerCallback()]
     )
 
 # 評価
