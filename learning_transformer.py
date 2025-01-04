@@ -94,6 +94,8 @@ y_train, y_test = y_reshaped[:split_index], y_reshaped[split_index:]
 # デバッグ用のデータ型と形状を出力
 print("X_train shape:", X_train.shape, "X_train dtype:", X_train.dtype)
 print("y_train shape:", y_train.shape, "y_train dtype:", y_train.dtype)
+print("Unique labels in y_train:", np.unique(y_train))
+print("Unique labels in y_test:", np.unique(y_test))
 
 # MirroredStrategy スコープ内でのモデル学習
 with strategy.scope():
@@ -109,44 +111,37 @@ with strategy.scope():
 
     def build_transformer(input_shape, num_classes):
         inputs = Input(shape=input_shape)
-        attention_output = MultiHeadAttention(num_heads=16, key_dim=64)(inputs, inputs)
+        attention_output = MultiHeadAttention(num_heads=8, key_dim=32)(inputs, inputs)  # Head数と次元を減らす
         attention_output = LayerNormalization()(attention_output + inputs)
-        dense_output = Dense(512, activation='relu')(attention_output)
-        dense_output = custom_dropout(dense_output)  # カスタムDropoutを使用
+        dense_output = Dense(256, activation='relu')(attention_output)  # ユニット数を減らす
+        dense_output = custom_dropout(dense_output, rate=0.5)  # Dropout率を設定
         flat_output = Flatten()(dense_output)
         outputs = Dense(num_classes, activation='softmax')(flat_output)
         return Model(inputs=inputs, outputs=outputs)
 
     model = build_transformer((lookback, X.shape[1]), len(np.unique(y)))
-    model.compile(optimizer=Adam(learning_rate=0.001), loss='sparse_categorical_crossentropy', metrics=['accuracy'])
+    model.compile(
+        optimizer=Adam(learning_rate=0.00001),  # 学習率をさらに小さく
+        loss='sparse_categorical_crossentropy',
+        metrics=['accuracy']
+    )
 
     # tf.data.Datasetの作成（修正版）
-    X_train = np.asarray(X_train, dtype=np.float32)
-    y_train = np.asarray(y_train, dtype=np.int32)
-
     train_dataset = tf.data.Dataset.from_generator(
         lambda: ((X_train[i], y_train[i]) for i in range(len(X_train))),
         output_signature=(
-            tf.TensorSpec(shape=X_train.shape[1:], dtype=tf.float32),
+            tf.TensorSpec(shape=(360, 6), dtype=tf.float32),
             tf.TensorSpec(shape=(), dtype=tf.int32)
         )
-    )
-
-    train_dataset = train_dataset.batch(adjusted_batch_size).prefetch(tf.data.experimental.AUTOTUNE)
-
-    # 同様にテストデータセットを作成
-    X_test = np.asarray(X_test, dtype=np.float32)
-    y_test = np.asarray(y_test, dtype=np.int32)
+    ).batch(adjusted_batch_size).prefetch(tf.data.experimental.AUTOTUNE)
 
     test_dataset = tf.data.Dataset.from_generator(
         lambda: ((X_test[i], y_test[i]) for i in range(len(X_test))),
         output_signature=(
-            tf.TensorSpec(shape=X_test.shape[1:], dtype=tf.float32),
+            tf.TensorSpec(shape=(360, 6), dtype=tf.float32),
             tf.TensorSpec(shape=(), dtype=tf.int32)
         )
-    )
-
-    test_dataset = test_dataset.batch(adjusted_batch_size).prefetch(tf.data.experimental.AUTOTUNE)
+    ).batch(adjusted_batch_size).prefetch(tf.data.experimental.AUTOTUNE)
 
     # モデルの学習
     history = model.fit(
@@ -157,6 +152,6 @@ with strategy.scope():
     )
 
 # 評価
-y_pred = model.predict(test_dataset).argmax(axis=1)
+y_pred = np.concatenate([model.predict(batch).argmax(axis=1) for batch in test_dataset])
 print("Accuracy:", accuracy_score(y_test, y_pred))
 print(classification_report(y_test, y_pred, target_names=['Down', 'Flat', 'Up']))
